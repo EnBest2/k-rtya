@@ -1,6 +1,6 @@
 // Állítsd be, hogy a DNS lekérdezések alapértelmezetten IPv4-et adjanak vissza.
 const dns = require('dns');
-dns.setDefaultResultOrder('ipv4');
+dns.setDefaultResultOrder('ipv4first');
 
 require('dotenv').config(); // Környezeti változók betöltése a .env fájlból
 
@@ -19,10 +19,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 // SSL engedélyezése és kényszerített IPv4 kapcsolat (family: 4)
 const pool = new Pool({
   connectionString: process.env.SUPABASE_DB_URI,
-  ssl: {
-    rejectUnauthorized: false
-  },
-  family: 4  // Kényszeríti az IPv4 használatát
+  ssl: { rejectUnauthorized: false },
+  family: 4 // Kényszeríti az IPv4 használatát
 });
 
 app.use(express.json());
@@ -37,7 +35,7 @@ app.get('/', (req, res) => {
 });
 
 /**
- * JWT autentikációs middleware
+ * JWT autentikációs middleware.
  * A kliensnek az Authorization header-ben kell elküldenie: "Bearer <token>" formában.
  */
 function authenticateToken(req, res, next) {
@@ -104,10 +102,8 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-/* További API végpontok (deckek, kártyák, tanulási mód, statisztikák) ugyanúgy maradnak... */
-/* Például: Deckek kezelése, Kártya műveletek, tanulási mód stb. */
-
-/* STATISZTIKÁK lekérése */
+// További API végpontok (deckek, kártyák, tanulási mód, statisztikák) itt következnek...
+// Példa: statisztikák lekérése
 app.get('/api/statistics', authenticateToken, async (req, res) => {
   try {
     const decksResult = await pool.query('SELECT id FROM decks WHERE user_id = $1', [req.user.id]);
