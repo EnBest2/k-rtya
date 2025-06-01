@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flashcard Webalkalmazás</title>
+  <!-- PWA: iOS meta tagok -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="icon.png">
+  <!-- PWA: manifest -->
+  <link rel="manifest" href="manifest.json">
+  <!-- Favicon -->
+  <link rel="icon" href="icon.png">
+  <!-- CSS -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Flashcard Webapp</h1>
+      <nav>
+        <button id="nav-login">Bejelentkezés</button>
+        <button id="nav-register">Regisztráció</button>
+        <button id="nav-dashboard" style="display:none;">Dashboard</button>
+        <button id="nav-logout" style="display:none;">Kijelentkezés</button>
+      </nav>
+    </header>
+    <main>
+      <!-- Login Form -->
+      <section id="login-section" class="section" style="display:none;">
+        <h2>Bejelentkezés</h2>
+        <form id="login-form">
+          <input type="email" id="login-email" placeholder="E-mail" required>
+          <input type="password" id="login-password" placeholder="Jelszó" required>
+          <button type="submit">Bejelentkezés</button>
+        </form>
+        <div id="login-message"></div>
+      </section>
+      
+      <!-- Registration Form -->
+      <section id="register-section" class="section" style="display:none;">
+        <h2>Regisztráció</h2>
+        <form id="register-form">
+          <input type="email" id="register-email" placeholder="E-mail" required>
+          <input type="password" id="register-password" placeholder="Jelszó" required>
+          <button type="submit">Regisztráció</button>
+        </form>
+        <div id="register-message"></div>
+      </section>
+      
+      <!-- Dashboard -->
+      <section id="dashboard-section" class="section" style="display:none;">
+        <h2>Dashboard</h2>
+        <div id="stats">
+          <h3>Statisztikák</h3>
+          <p id="stats-info">Betöltés...</p>
+          <button id="refresh-stats">Frissítés</button>
+        </div>
+        <div id="decks">
+          <h3>Kártyacsomagok</h3>
+          <form id="deck-form">
+            <input type="text" id="deck-name" placeholder="Csomag neve" required>
+            <textarea id="deck-desc" placeholder="Leírás"></textarea>
+            <button type="submit">Új csomag létrehozása</button>
+          </form>
+          <div id="deck-list"></div>
+        </div>
+        <div id="cards">
+          <h3>Kártyák</h3>
+          <form id="card-form">
+            <input type="text" id="card-question" placeholder="Kérdés" required>
+            <input type="text" id="card-answer" placeholder="Válasz" required>
+            <button type="submit">Új kártya létrehozása</button>
+          </form>
+          <div id="card-list"></div>
+        </div>
+        <div id="study-mode">
+          <h3>Tanulás mód</h3>
+          <button id="start-study">Tanulás indítása</button>
+          <div id="study-card" style="display:none;">
+            <p id="study-question"></p>
+            <button id="show-answer">Válasz megjelenítése</button>
+            <p id="study-answer" style="display:none;"></p>
+            <div id="study-feedback" style="display:none;">
+              <button id="knew-btn">Tudtam</button>
+              <button id="not-knew-btn">Nem tudtam</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <p>&copy; 2025 Flashcard Webapp</p>
+    </footer>
+  </div>
+  
+  <!-- JS -->
+  <script src="script.js"></script>
+  <script>
+    // Service Worker regisztráció a PWA funkciókhoz
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('service-worker.js').then(function(registration) {
+          console.log('ServiceWorker regisztrálva: ', registration.scope);
+        }, function(err) {
+          console.log('ServiceWorker regisztrálási hiba: ', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
