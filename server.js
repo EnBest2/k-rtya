@@ -13,8 +13,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-// Supabase PostgreSQL kapcsolódás – connection string a .env-ből
-// Az SSL opció hozzáadásával biztosítjuk, hogy a kapcsolat biztonságos legyen
+// Supabase PostgreSQL kapcsolódás – connection string a .env fájlból
+// SSL engedélyezése a kapcsolat biztonságos létrehozásához
 const pool = new Pool({
   connectionString: process.env.SUPABASE_DB_URI,
   ssl: {
@@ -25,10 +25,10 @@ const pool = new Pool({
 app.use(express.json());
 app.use(cors());
 
-// Statikus fájlok kiszolgálása (ha a frontend fájlok a gyökérben vannak)
+// Statikus fájlok kiszolgálása a gyökérből (ha a frontend fájlok itt találhatók)
 app.use(express.static(path.join(__dirname)));
 
-// Root route: az index.html kiszolgálása
+// Root route: index.html kiszolgálása
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -52,17 +52,21 @@ function authenticateToken(req, res, next) {
 /* REGISZTRÁCIÓ: A felhasználói adatok mentése a Supabase adatbázisba */
 app.post('/api/register', async (req, res) => {
   const { email, password } = req.body;
+  console.log("Regisztrációs kérelem:", req.body);
   try {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    console.log("Lekérdezés eredménye:", result.rows);
     if (result.rows.length > 0) {
       return res.status(400).json({ message: 'E-mail már regisztrálva van' });
     }
     
     const hashedPassword = await bcrypt.hash(password, 10);
+    console.log("Jelszó hash elkészítve:", hashedPassword);
     const insert = await pool.query(
       'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
       [email, hashedPassword]
     );
+    console.log("Insert eredménye:", insert.rows);
     
     res.status(201).json({ message: 'Sikeres regisztráció', user: insert.rows[0] });
   } catch (err) {
@@ -74,6 +78,7 @@ app.post('/api/register', async (req, res) => {
 /* BEJELENTKEZÉS: Felhasználó hitelesítése és JWT token generálása */
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
+  console.log("Bejelentkezési kérelem:", req.body);
   try {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     if (result.rows.length === 0) {
@@ -251,7 +256,7 @@ app.delete('/api/decks/:deckId/cards/:cardId', authenticateToken, async (req, re
   }
 });
 
-/* TANULÁSI MÓD: véletlenszerű kártya lekérése, majd a tanulási eredmény rögzítése */
+/* TANULÁSI MÓD: Véletlenszerű kártya lekérése, majd a tanulási eredmény rögzítése */
 app.get('/api/decks/:deckId/study', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   try {
