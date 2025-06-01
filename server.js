@@ -14,18 +14,19 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
 // Supabase PostgreSQL kapcsolódás – connection string a .env fájlból
-// SSL engedélyezése a kapcsolat biztonságos létrehozásához
+// SSL engedélyezése és kényszerített IPv4 kapcsolat (family: 4)
 const pool = new Pool({
   connectionString: process.env.SUPABASE_DB_URI,
   ssl: {
     rejectUnauthorized: false
-  }
+  },
+  family: 4  // Kényszeríti az IPv4 használatát
 });
 
 app.use(express.json());
 app.use(cors());
 
-// Statikus fájlok kiszolgálása a gyökérből (ha a frontend fájlok itt találhatók)
+// Statikus fájlok kiszolgálása (ha a frontend fájlok a gyökérben vannak)
 app.use(express.static(path.join(__dirname)));
 
 // Root route: index.html kiszolgálása
@@ -34,7 +35,7 @@ app.get('/', (req, res) => {
 });
 
 /**
- * JWT autentikációs middleware.
+ * JWT autentikációs middleware
  * A kliensnek az Authorization header-ben kell elküldenie: "Bearer <token>" formában.
  */
 function authenticateToken(req, res, next) {
@@ -81,12 +82,14 @@ app.post('/api/login', async (req, res) => {
   console.log("Bejelentkezési kérelem:", req.body);
   try {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    console.log("Lekérdezés eredménye:", result.rows);
     if (result.rows.length === 0) {
       return res.status(400).json({ message: 'Érvénytelen hitelesítő adatok' });
     }
     
     const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password);
+    console.log("Bcrypt összehasonlítás eredménye:", match);
     if (!match) {
       return res.status(400).json({ message: 'Érvénytelen hitelesítő adatok' });
     }
@@ -99,8 +102,9 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-/* Kártyacsomag műveletek */
+/* További API végpontok a deckek, kártyák, tanulási mód, és statisztikák kezeléséhez */
 
+/* Deckek kezelése */
 // Deck lekérése a felhasználóhoz
 app.get('/api/decks', authenticateToken, async (req, res) => {
   try {
@@ -164,7 +168,6 @@ app.delete('/api/decks/:deckId', authenticateToken, async (req, res) => {
 });
 
 /* Kártya műveletek */
-
 // Kártyák lekérése egy deckből
 app.get('/api/decks/:deckId/cards', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
