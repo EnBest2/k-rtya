@@ -1,24 +1,33 @@
 /* server.js */
 
-require('dotenv').config(); // Betöltjük a környezeti változókat a .env fájlból
+require('dotenv').config(); // Környezetváltozók betöltése a .env fájlból
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { Pool } = require('pg');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-// Supabase PostgreSQL kapcsolódás – a connection stringet a .env-ben adtuk meg
+// Supabase PostgreSQL kapcsolódás – connection string a .env-ből
 const pool = new Pool({
   connectionString: process.env.SUPABASE_DB_URI
 });
 
 app.use(express.json());
 app.use(cors());
+
+// Statikus fájlok kiszolgálása a gyökérből (ha a frontend fájlok itt vannak)
+app.use(express.static(path.join(__dirname)));
+
+// Root route: index.html kiszolgálása
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 /**
  * JWT autentikációs middleware.
@@ -27,7 +36,7 @@ app.use(cors());
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-  if (token == null) return res.status(401).json({ message: 'Token hiányzik' });
+  if (!token) return res.status(401).json({ message: 'Token hiányzik' });
   
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ message: 'Érvénytelen token' });
@@ -36,7 +45,7 @@ function authenticateToken(req, res, next) {
   });
 }
 
-/* REGISZTRÁCIÓ: A felhasználói adatok elmentése a Supabase adatbázisba */
+/* REGISZTRÁCIÓ: A felhasználói adatok mentése a Supabase adatbázisba */
 app.post('/api/register', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -58,7 +67,7 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-/* BEJELENTKEZÉS: A felhasználó hitelesítése és JWT token generálása */
+/* BEJELENTKEZÉS: Felhasználó hitelesítése és JWT token generálása */
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -81,7 +90,9 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-/* Kártyacsomag műveletek: lekérés, létrehozás, módosítás, törlés */
+/* Kártyacsomag műveletek */
+
+// Deck lekérése a felhasználóhoz
 app.get('/api/decks', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM decks WHERE user_id = $1', [req.user.id]);
@@ -92,6 +103,7 @@ app.get('/api/decks', authenticateToken, async (req, res) => {
   }
 });
 
+// Új deck létrehozása
 app.post('/api/decks', authenticateToken, async (req, res) => {
   const { name, description } = req.body;
   try {
@@ -106,6 +118,7 @@ app.post('/api/decks', authenticateToken, async (req, res) => {
   }
 });
 
+// Deck módosítása
 app.put('/api/decks/:deckId', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   const { name, description } = req.body;
@@ -122,6 +135,7 @@ app.put('/api/decks/:deckId', authenticateToken, async (req, res) => {
   }
 });
 
+// Deck törlése (és a kapcsolódó kártyák törlése)
 app.delete('/api/decks/:deckId', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   try {
@@ -138,7 +152,9 @@ app.delete('/api/decks/:deckId', authenticateToken, async (req, res) => {
   }
 });
 
-/* Kártya műveletek: lekérés, létrehozás, módosítás, törlés */
+/* Kártya műveletek */
+
+// Kártyák lekérése egy deckből
 app.get('/api/decks/:deckId/cards', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   try {
@@ -153,6 +169,7 @@ app.get('/api/decks/:deckId/cards', authenticateToken, async (req, res) => {
   }
 });
 
+// Új kártya létrehozása egy deck-ben
 app.post('/api/decks/:deckId/cards', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   const { question, answer } = req.body;
@@ -171,6 +188,7 @@ app.post('/api/decks/:deckId/cards', authenticateToken, async (req, res) => {
   }
 });
 
+// Kártya módosítása
 app.put('/api/decks/:deckId/cards/:cardId', authenticateToken, async (req, res) => {
   const { deckId, cardId } = req.params;
   const { question, answer } = req.body;
@@ -190,6 +208,7 @@ app.put('/api/decks/:deckId/cards/:cardId', authenticateToken, async (req, res) 
   }
 });
 
+// Kártya törlése
 app.delete('/api/decks/:deckId/cards/:cardId', authenticateToken, async (req, res) => {
   const { deckId, cardId } = req.params;
   try {
@@ -246,7 +265,7 @@ app.post('/api/decks/:deckId/study/:cardId', authenticateToken, async (req, res)
   }
 });
 
-/* STATISZTIKÁK lekérése: sikerarány, tanulási aktivitás */
+/* STATISZTIKÁK */
 app.get('/api/statistics', authenticateToken, async (req, res) => {
   try {
     const decksResult = await pool.query('SELECT id FROM decks WHERE user_id = $1', [req.user.id]);
