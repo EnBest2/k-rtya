@@ -1,59 +1,29 @@
 /* server.js */
 
-// Függőségek betöltése
+require('dotenv').config(); // Betöltjük a környezeti változókat a .env fájlból
+
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
-const mongoose = require('mongoose');
+const { Pool } = require('pg');
 const cors = require('cors');
 
-// Express alkalmazás létrehozása
 const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-// Middleware-ek
+// Supabase PostgreSQL kapcsolódás – a connection stringet a .env-ben adtuk meg
+const pool = new Pool({
+  connectionString: process.env.SUPABASE_DB_URI
+});
+
 app.use(express.json());
 app.use(cors());
 
-// MongoDB kapcsolódás (állítsd be a MONGODB_URI környezeti változót, ha szükséges)
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/flashcards', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-}).then(() => console.log('MongoDB kapcsolódva'))
-  .catch(err => console.error(err));
-
-// Mongoose sémák és modellek
-
-// Felhasználó séma
-const userSchema = new mongoose.Schema({
-  email: { type: String, unique: true },
-  password: String,
-  createdAt: { type: Date, default: Date.now }
-});
-const User = mongoose.model('User', userSchema);
-
-// Kártyacsomag séma
-const deckSchema = new mongoose.Schema({
-  name: String,
-  description: String,
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  createdAt: { type: Date, default: Date.now }
-});
-const Deck = mongoose.model('Deck', deckSchema);
-
-// Kártya séma
-const cardSchema = new mongoose.Schema({
-  question: String,
-  answer: String,
-  deck: { type: mongoose.Schema.Types.ObjectId, ref: 'Deck' },
-  correctCount: { type: Number, default: 0 },
-  incorrectCount: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
-});
-const Card = mongoose.model('Card', cardSchema);
-
-// JWT autentikáció middleware-je
+/**
+ * JWT autentikációs middleware.
+ * A kliensnek az Authorization header-ben kell elküldenie: "Bearer <token>" formában.
+ */
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -66,216 +36,238 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// API végpontok
-
-// Regisztráció
+/* REGISZTRÁCIÓ: A felhasználói adatok elmentése a Supabase adatbázisba */
 app.post('/api/register', async (req, res) => {
   const { email, password } = req.body;
   try {
-    // Ellenőrizzük, hogy létezik-e már a felhasználó
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ message: 'E-mail már regisztrálva van' });
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (result.rows.length > 0) {
+      return res.status(400).json({ message: 'E-mail már regisztrálva van' });
+    }
     
-    // Jelszó bcrypt-tel hash-elése
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ email, password: hashedPassword });
-    await user.save();
-    res.status(201).json({ message: 'Sikeres regisztráció' });
+    const insert = await pool.query(
+      'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email',
+      [email, hashedPassword]
+    );
+    
+    res.status(201).json({ message: 'Sikeres regisztráció', user: insert.rows[0] });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Bejelentkezés
+/* BEJELENTKEZÉS: A felhasználó hitelesítése és JWT token generálása */
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   try {
-    const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: 'Érvénytelen hitelesítő adatok' });
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    if (result.rows.length === 0) {
+      return res.status(400).json({ message: 'Érvénytelen hitelesítő adatok' });
+    }
     
+    const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(400).json({ message: 'Érvénytelen hitelesítő adatok' });
+    if (!match) {
+      return res.status(400).json({ message: 'Érvénytelen hitelesítő adatok' });
+    }
     
-    const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Felhasználó összes kártyacsomagjának lekérése
+/* Kártyacsomag műveletek: lekérés, létrehozás, módosítás, törlés */
 app.get('/api/decks', authenticateToken, async (req, res) => {
   try {
-    const decks = await Deck.find({ user: req.user.id });
-    res.json(decks);
+    const result = await pool.query('SELECT * FROM decks WHERE user_id = $1', [req.user.id]);
+    res.json(result.rows);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Új kártyacsomag létrehozása
 app.post('/api/decks', authenticateToken, async (req, res) => {
   const { name, description } = req.body;
   try {
-    const deck = new Deck({ name, description, user: req.user.id });
-    await deck.save();
-    res.status(201).json(deck);
+    const result = await pool.query(
+      'INSERT INTO decks (name, description, user_id) VALUES ($1, $2, $3) RETURNING *',
+      [name, description, req.user.id]
+    );
+    res.status(201).json(result.rows[0]);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Kártyacsomag módosítása
 app.put('/api/decks/:deckId', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   const { name, description } = req.body;
   try {
-    const deck = await Deck.findOneAndUpdate({ _id: deckId, user: req.user.id }, { name, description }, { new: true });
-    if (!deck) return res.status(404).json({ message: 'Csomag nem található' });
-    res.json(deck);
+    const result = await pool.query(
+      'UPDATE decks SET name = $1, description = $2 WHERE id = $3 AND user_id = $4 RETURNING *',
+      [name, description, deckId, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Csomag nem található' });
+    res.json(result.rows[0]);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Kártyacsomag törlése (és a hozzá tartozó kártyák törlése)
 app.delete('/api/decks/:deckId', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   try {
-    await Deck.findOneAndDelete({ _id: deckId, user: req.user.id });
-    await Card.deleteMany({ deck: deckId });
+    await pool.query('DELETE FROM cards WHERE deck_id = $1', [deckId]);
+    const result = await pool.query(
+      'DELETE FROM decks WHERE id = $1 AND user_id = $2 RETURNING *',
+      [deckId, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Csomag nem található' });
     res.json({ message: 'Csomag törölve' });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Kártyák lekérése egy csomagból
+/* Kártya műveletek: lekérés, létrehozás, módosítás, törlés */
 app.get('/api/decks/:deckId/cards', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   try {
-    const deck = await Deck.findOne({ _id: deckId, user: req.user.id });
-    if (!deck) return res.status(404).json({ message: 'Csomag nem található' });
+    const deckResult = await pool.query('SELECT * FROM decks WHERE id = $1 AND user_id = $2', [deckId, req.user.id]);
+    if (deckResult.rows.length === 0) return res.status(404).json({ message: 'Csomag nem található' });
     
-    const cards = await Card.find({ deck: deckId });
-    res.json(cards);
+    const cards = await pool.query('SELECT * FROM cards WHERE deck_id = $1', [deckId]);
+    res.json(cards.rows);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Új kártya létrehozása egy csomagban
 app.post('/api/decks/:deckId/cards', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   const { question, answer } = req.body;
   try {
-    const deck = await Deck.findOne({ _id: deckId, user: req.user.id });
-    if (!deck) return res.status(404).json({ message: 'Csomag nem található' });
+    const deckResult = await pool.query('SELECT * FROM decks WHERE id = $1 AND user_id = $2', [deckId, req.user.id]);
+    if (deckResult.rows.length === 0) return res.status(404).json({ message: 'Csomag nem található' });
     
-    const card = new Card({ question, answer, deck: deckId });
-    await card.save();
-    res.status(201).json(card);
+    const result = await pool.query(
+      'INSERT INTO cards (question, answer, deck_id, correct_count, incorrect_count) VALUES ($1, $2, $3, 0, 0) RETURNING *',
+      [question, answer, deckId]
+    );
+    res.status(201).json(result.rows[0]);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Kártya módosítása
 app.put('/api/decks/:deckId/cards/:cardId', authenticateToken, async (req, res) => {
   const { deckId, cardId } = req.params;
   const { question, answer } = req.body;
   try {
-    const deck = await Deck.findOne({ _id: deckId, user: req.user.id });
-    if (!deck) return res.status(404).json({ message: 'Csomag nem található' });
+    const deckResult = await pool.query('SELECT * FROM decks WHERE id = $1 AND user_id = $2', [deckId, req.user.id]);
+    if (deckResult.rows.length === 0) return res.status(404).json({ message: 'Csomag nem található' });
     
-    const card = await Card.findOneAndUpdate({ _id: cardId, deck: deckId }, { question, answer }, { new: true });
-    if (!card) return res.status(404).json({ message: 'Kártya nem található' });
-    
-    res.json(card);
+    const result = await pool.query(
+      'UPDATE cards SET question = $1, answer = $2 WHERE id = $3 AND deck_id = $4 RETURNING *',
+      [question, answer, cardId, deckId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Kártya nem található' });
+    res.json(result.rows[0]);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Kártya törlése
 app.delete('/api/decks/:deckId/cards/:cardId', authenticateToken, async (req, res) => {
   const { deckId, cardId } = req.params;
   try {
-    const deck = await Deck.findOne({ _id: deckId, user: req.user.id });
-    if (!deck) return res.status(404).json({ message: 'Csomag nem található' });
+    const deckResult = await pool.query('SELECT * FROM decks WHERE id = $1 AND user_id = $2', [deckId, req.user.id]);
+    if (deckResult.rows.length === 0) return res.status(404).json({ message: 'Csomag nem található' });
     
-    await Card.findOneAndDelete({ _id: cardId, deck: deckId });
+    const result = await pool.query(
+      'DELETE FROM cards WHERE id = $1 AND deck_id = $2 RETURNING *',
+      [cardId, deckId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Kártya nem található' });
     res.json({ message: 'Kártya törölve' });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Tanulási mód: véletlenszerű kártya lekérése egy csomagból
+/* TANULÁSI MÓD: véletlenszerű kártya lekérése, majd a tanulási eredmény rögzítése */
 app.get('/api/decks/:deckId/study', authenticateToken, async (req, res) => {
   const { deckId } = req.params;
   try {
-    const deck = await Deck.findOne({ _id: deckId, user: req.user.id });
-    if (!deck) return res.status(404).json({ message: 'Csomag nem található' });
+    const deckResult = await pool.query('SELECT * FROM decks WHERE id = $1 AND user_id = $2', [deckId, req.user.id]);
+    if (deckResult.rows.length === 0) return res.status(404).json({ message: 'Csomag nem található' });
     
-    const cards = await Card.find({ deck: deckId });
-    if (!cards.length) return res.status(404).json({ message: 'Nincsenek kártyák' });
+    const cardsResult = await pool.query('SELECT * FROM cards WHERE deck_id = $1', [deckId]);
+    if (cardsResult.rows.length === 0) return res.status(404).json({ message: 'Nincsenek kártyák' });
     
-    const card = cards[Math.floor(Math.random() * cards.length)];
+    const randomIndex = Math.floor(Math.random() * cardsResult.rows.length);
+    const card = cardsResult.rows[randomIndex];
     res.json(card);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Tanulási eredmény rögzítése egy kártyához
 app.post('/api/decks/:deckId/study/:cardId', authenticateToken, async (req, res) => {
   const { deckId, cardId } = req.params;
   const { correct } = req.body;
   try {
-    const deck = await Deck.findOne({ _id: deckId, user: req.user.id });
-    if (!deck) return res.status(404).json({ message: 'Csomag nem található' });
-    
-    const card = await Card.findOne({ _id: cardId, deck: deckId });
-    if (!card) return res.status(404).json({ message: 'Kártya nem található' });
+    const deckResult = await pool.query('SELECT * FROM decks WHERE id = $1 AND user_id = $2', [deckId, req.user.id]);
+    if (deckResult.rows.length === 0) return res.status(404).json({ message: 'Csomag nem található' });
     
     if (correct) {
-      card.correctCount += 1;
+      await pool.query('UPDATE cards SET correct_count = correct_count + 1 WHERE id = $1 AND deck_id = $2', [cardId, deckId]);
     } else {
-      card.incorrectCount += 1;
+      await pool.query('UPDATE cards SET incorrect_count = incorrect_count + 1 WHERE id = $1 AND deck_id = $2', [cardId, deckId]);
     }
-    await card.save();
     res.json({ message: 'Eredmény rögzítve' });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Felhasználói statisztikák lekérése
+/* STATISZTIKÁK lekérése: sikerarány, tanulási aktivitás */
 app.get('/api/statistics', authenticateToken, async (req, res) => {
   try {
-    const decks = await Deck.find({ user: req.user.id });
-    const deckIds = decks.map(deck => deck._id);
+    const decksResult = await pool.query('SELECT id FROM decks WHERE user_id = $1', [req.user.id]);
+    const deckIds = decksResult.rows.map(row => row.id);
+    if (deckIds.length === 0) return res.json({ successRate: 0, studyCount: 0 });
     
-    const cards = await Card.find({ deck: { $in: deckIds } });
-    
-    let totalCorrect = 0;
-    let totalAttempts = 0;
-    cards.forEach(card => {
-      totalCorrect += card.correctCount;
-      totalAttempts += (card.correctCount + card.incorrectCount);
+    const cardsResult = await pool.query('SELECT correct_count, incorrect_count FROM cards WHERE deck_id = ANY($1)', [deckIds]);
+    let totalCorrect = 0, totalAttempts = 0;
+    cardsResult.rows.forEach(card => {
+      totalCorrect += card.correct_count;
+      totalAttempts += (card.correct_count + card.incorrect_count);
     });
     
     const successRate = totalAttempts > 0 ? Math.round((totalCorrect / totalAttempts) * 100) : 0;
-    const studyCount = totalAttempts;
-    
-    res.json({ successRate, studyCount });
+    res.json({ successRate, studyCount: totalAttempts });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: 'Szerver hiba' });
   }
 });
 
-// Szerver indítása
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
