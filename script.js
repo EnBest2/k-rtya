@@ -17,7 +17,7 @@ const cardForm = document.getElementById('card-form');
 let currentDeckId = null;
 let currentCard = null;
 
-// Segédfüggvény a szekciók váltásához
+// Szekciók váltása
 function showSection(section) {
   loginSection.style.display = 'none';
   registerSection.style.display = 'none';
@@ -25,7 +25,7 @@ function showSection(section) {
   section.style.display = 'block';
 }
 
-// Oldal betöltésekor ellenőrizzük a felhasználói autentikációt
+// Ellenőrzi a felhasználói autentikációt és megjeleníti a megfelelő navigációs gombokat
 function checkAuth() {
   const token = localStorage.getItem('token');
   if (token) {
@@ -86,18 +86,18 @@ loginForm.addEventListener('submit', async (e) => {
   }
 });
 
-// Kijelentkezés kezelése
+// Kijelentkezés
 navLogout.addEventListener('click', () => {
   localStorage.removeItem('token');
   checkAuth();
 });
 
-// Navigációs gomb események
+// Navigációs gombok
 navLogin.addEventListener('click', () => { showSection(loginSection); });
 navRegister.addEventListener('click', () => { showSection(registerSection); });
 navDashboard.addEventListener('click', () => { loadDashboard(); });
 
-// Dashboard betöltése: kártyacsomagok, statisztikák stb.
+// Dashboard betöltése: kártyacsomag, statisztikák, stb.
 async function loadDashboard() {
   showSection(dashboardSection);
   loadDecks();
@@ -119,17 +119,15 @@ async function loadDecks() {
     const deckDiv = document.createElement('div');
     deckDiv.className = 'deck';
     deckDiv.innerHTML = `<strong>${deck.name}</strong><p>${deck.description}</p>`;
-    // Kattintás: kártyák betöltése az aktuális csomagból
     deckDiv.addEventListener('click', () => {
-      currentDeckId = deck._id;
-      loadCards(deck._id);
+      currentDeckId = deck.id;
+      loadCards(deck.id);
     });
-    // Törlő gomb a csomaghoz
     const delBtn = document.createElement('button');
     delBtn.innerText = 'Törlés';
     delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await fetch('/api/decks/' + deck._id, {
+      await fetch('/api/decks/' + deck.id, {
         method: 'DELETE',
         headers: {'Authorization': 'Bearer ' + token}
       });
@@ -140,7 +138,7 @@ async function loadDecks() {
   });
 }
 
-// Új csomag létrehozása
+// Új deck létrehozása
 deckForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = document.getElementById('deck-name').value;
@@ -158,10 +156,10 @@ deckForm.addEventListener('submit', async (e) => {
   }
 });
 
-// Kártyák betöltése az adott csomagból
+// Kártyák betöltése egy deckből
 async function loadCards(deckId) {
   const token = localStorage.getItem('token');
-  const res = await fetch('/api/decks/' + deckId + '/cards', {
+  const res = await fetch(`/api/decks/${deckId}/cards`, {
     headers: {'Authorization': 'Bearer ' + token}
   });
   const cards = await res.json();
@@ -172,11 +170,10 @@ async function loadCards(deckId) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
     cardDiv.innerHTML = `<strong>Q:</strong> ${card.question} <br> <strong>A:</strong> ${card.answer}`;
-    // Törlés gomb a kártyához
     const delBtn = document.createElement('button');
     delBtn.innerText = 'Törlés';
     delBtn.addEventListener('click', async () => {
-      await fetch(`/api/decks/${deckId}/cards/${card._id}`, {
+      await fetch(`/api/decks/${deckId}/cards/${card.id}`, {
         method: 'DELETE',
         headers: {'Authorization': 'Bearer ' + token}
       });
@@ -187,7 +184,7 @@ async function loadCards(deckId) {
   });
 }
 
-// Új kártya létrehozása az aktuális csomaghoz
+// Új kártya létrehozása
 cardForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!currentDeckId) {
@@ -223,7 +220,7 @@ async function loadStatistics() {
 
 document.getElementById('refresh-stats').addEventListener('click', loadStatistics);
 
-// Tanulási mód indítása
+// Tanulási mód
 document.getElementById('start-study').addEventListener('click', async function() {
   if (!currentDeckId) {
     alert("Kérlek válassz előbb egy kártyacsomagot a tanuláshoz!");
@@ -234,7 +231,6 @@ document.getElementById('start-study').addEventListener('click', async function(
 
 async function startStudy() {
   const token = localStorage.getItem('token');
-  // Véletlenszerű kártya lekérése a tanuláshoz
   const res = await fetch(`/api/decks/${currentDeckId}/study`, {
     headers: {'Authorization': 'Bearer ' + token}
   });
@@ -250,14 +246,12 @@ async function startStudy() {
   document.getElementById('study-card').style.display = 'block';
 }
 
-// Válasz megmutatása
 document.getElementById('show-answer').addEventListener('click', function() {
   document.getElementById('study-answer').innerText = currentCard.answer;
   document.getElementById('study-answer').style.display = 'block';
   document.getElementById('study-feedback').style.display = 'block';
 });
 
-// Tanulási visszajelzés kezelése
 document.getElementById('knew-btn').addEventListener('click', function() {
   submitStudyResult(true);
 });
@@ -267,12 +261,11 @@ document.getElementById('not-knew-btn').addEventListener('click', function() {
 
 async function submitStudyResult(correct) {
   const token = localStorage.getItem('token');
-  await fetch(`/api/decks/${currentDeckId}/study/${currentCard._id}`, {
+  await fetch(`/api/decks/${currentDeckId}/study/${currentCard.id}`, {
     method: 'POST',
     headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
     body: JSON.stringify({ correct })
   });
-  // Következő kártya betöltése
   startStudy();
 }
 
