@@ -1,4 +1,4 @@
-// Állítsd be, hogy a DNS lekérdezések alapértelmezetten IPv4-et adjanak vissza.
+// Állítsd be, hogy a DNS lekérdezések alapértelmezetten IPv4 eredményt adjanak vissza.
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
@@ -15,8 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 
-// Supabase PostgreSQL kapcsolódás – connection string a .env fájlból
-// SSL engedélyezése és kényszerített IPv4 kapcsolat (family: 4)
+// Supabase PostgreSQL kapcsolat Session poolerrel – a connection string a .env fájlból
 const pool = new Pool({
   connectionString: process.env.SUPABASE_DB_URI,
   ssl: { rejectUnauthorized: false },
@@ -26,7 +25,7 @@ const pool = new Pool({
 app.use(express.json());
 app.use(cors());
 
-// Statikus fájlok kiszolgálása (ha a frontend fájlok a gyökérben vannak)
+// Statikus fájlok kiszolgálása (például index.html, style.css, stb.)
 app.use(express.static(path.join(__dirname)));
 
 // Root route: index.html kiszolgálása
@@ -36,7 +35,7 @@ app.get('/', (req, res) => {
 
 /**
  * JWT autentikációs middleware.
- * A kliensnek az Authorization header-ben kell elküldenie: "Bearer <token>" formában.
+ * A kliensnek az Authorization header-ben kell küldenie: "Bearer <token>" formában.
  */
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -68,7 +67,6 @@ app.post('/api/register', async (req, res) => {
       [email, hashedPassword]
     );
     console.log("Insert eredménye:", insert.rows);
-    
     res.status(201).json({ message: 'Sikeres regisztráció', user: insert.rows[0] });
   } catch (err) {
     console.error('Regisztráció hiba:', err);
@@ -102,8 +100,9 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// További API végpontok (deckek, kártyák, tanulási mód, statisztikák) itt következnek...
-// Példa: statisztikák lekérése
+/* Itt jönnek a további API végpontok, például deckek, kártyák kezelése, tanulási mód és statisztikák. */
+
+// Példa: STATISZTIKÁK lekérése
 app.get('/api/statistics', authenticateToken, async (req, res) => {
   try {
     const decksResult = await pool.query('SELECT id FROM decks WHERE user_id = $1', [req.user.id]);
